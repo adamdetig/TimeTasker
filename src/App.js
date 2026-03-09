@@ -40,6 +40,7 @@ function buildSuggestions(completed) {
   return Object.values(groups).filter(g => g.actuals.length >= 3).map(g => ({ name: g.name, avg: Math.round(g.actuals.reduce((a,b)=>a+b,0)/g.actuals.length) }));
 }
 function getMatches(query, suggestions) { if (!query.trim()) return []; const q = query.toLowerCase(); return suggestions.filter(s => s.name.toLowerCase().includes(q)).slice(0, 5); }
+function isOverdue(task) { return task.date_key && task.date_key < todayKey(); }
 
 // ── AUTH SCREEN ──────────────────────────────
 
@@ -143,7 +144,7 @@ function WeekBar({ dayHistory, streak }) {
 
 // ── TASK CARD ────────────────────────────────
 
-function TaskCard({ task, timerState, elapsed, onStartTimer, onPauseTimer, onResumeTimer, onEndTimer, onComplete, onDelete, onEdit, compact = false }) {
+function TaskCard({ task, timerState, elapsed, onStartTimer, onPauseTimer, onResumeTimer, onEndTimer, onComplete, onDelete, onEdit, onMoveToday, compact = false }) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(task.name);
   const [editMin, setEditMin] = useState(String(task.estimated));
@@ -152,6 +153,7 @@ function TaskCard({ task, timerState, elapsed, onStartTimer, onPauseTimer, onRes
   const editMinRef = useRef();
   const isRunning = timerState === "running", isPaused = timerState === "paused", isActive = isRunning || isPaused;
   const overEst = isActive && elapsed > task.estimated * 60;
+  const overdue = isOverdue(task);
 
   function saveEdit() { const n = editName.trim(), m = parseInt(editMin); if (!n || !m || m <= 0) return; onEdit(task.id, n, m); setEditing(false); }
   function cancelEdit() { setEditName(task.name); setEditMin(String(task.estimated)); setEditing(false); }
@@ -169,7 +171,7 @@ function TaskCard({ task, timerState, elapsed, onStartTimer, onPauseTimer, onRes
   );
 
   return (
-    <div style={{ background: isRunning ? "#f0fdf4" : isPaused ? "#fffbeb" : "#fff", border: isRunning ? "1.5px solid #4ade80" : isPaused ? "1.5px solid #fbbf24" : "1.5px solid #ede9e1", borderRadius: 10, padding: compact ? "10px 12px" : "12px 14px", display: "flex", flexDirection: "column", gap: 6, transition: "box-shadow 0.15s" }}
+    <div style={{ background: isRunning ? "#f0fdf4" : isPaused ? "#fffbeb" : overdue ? "#fff9f9" : "#fff", border: isRunning ? "1.5px solid #4ade80" : isPaused ? "1.5px solid #fbbf24" : "1.5px solid #ede9e1", borderLeft: overdue && !isActive ? "3px solid #ef4444" : undefined, borderRadius: 10, padding: compact ? "10px 12px" : "12px 14px", display: "flex", flexDirection: "column", gap: 6, transition: "box-shadow 0.15s" }}
       onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.07)"} onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {isRunning && <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", letterSpacing: "0.06em", textTransform: "uppercase", animation: "pulse 1.4s ease-in-out infinite" }}>Live</span>}
@@ -181,13 +183,15 @@ function TaskCard({ task, timerState, elapsed, onStartTimer, onPauseTimer, onRes
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, color: "#a09880", background: "#f4f0e8", borderRadius: 5, padding: "2px 7px", fontWeight: 600 }}>est. {formatMin(task.estimated)}</span>
-        {task.date_key && <span style={{ fontSize: 11, color: "#6b8cba", background: "#eef4ff", borderRadius: 5, padding: "2px 7px", fontWeight: 600 }}>{task.date_key === todayKey() ? "Today" : task.date_key === offsetKey(1) ? "Tomorrow" : task.date_key}</span>}
+        {task.date_key && !overdue && <span style={{ fontSize: 11, color: "#6b8cba", background: "#eef4ff", borderRadius: 5, padding: "2px 7px", fontWeight: 600 }}>{task.date_key === todayKey() ? "Today" : task.date_key === offsetKey(1) ? "Tomorrow" : task.date_key}</span>}
+        {overdue && <span style={{ fontSize: 11, color: "#dc2626", background: "#fee2e2", borderRadius: 5, padding: "2px 7px", fontWeight: 700 }}>Overdue</span>}
       </div>
       <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
         {!isActive && !logging && <button onClick={() => onStartTimer(task)} style={{ flex: 1, background: "#f4f0e8", border: "none", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#555" }}>Start Timer</button>}
         {isRunning && <button onClick={() => onPauseTimer(task.id)} style={{ flex: 1, background: "#fef3c7", border: "none", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#b45309" }}>Pause</button>}
         {isPaused  && <button onClick={() => onResumeTimer(task)} style={{ flex: 1, background: "#dcfce7", border: "none", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#166534" }}>Resume</button>}
         {isActive  && <button onClick={() => onEndTimer(task.id)} style={{ flex: 1, background: "#1a1814", color: "#fff", border: "none", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Done</button>}
+        {overdue && !isActive && onMoveToday && <button onClick={() => onMoveToday(task.id)} style={{ flex: 1, background: "#fee2e2", border: "none", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}>Move to Today</button>}
       </div>
       {!isActive && (logging ? (
         <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
@@ -211,8 +215,8 @@ function CompletedRow({ task, onDelete, onEdit }) {
   const [editAct, setEditAct] = useState(String(task.actual));
   const estRef = useRef(), actRef = useRef();
   const pct = getEfficiency(task.estimated, task.actual), sign = pct > 0 ? "+" : "";
-  const color = pct > 0 ? "#1a5c8a" : pct === 0 ? "#2d6a4f" : "#7a7a7a";
-  const bg    = pct > 0 ? "#daeeff" : pct === 0 ? "#d8f3dc" : "#f0f0ee";
+  const color = pct > 0 ? "#166534" : pct < 0 ? "#991b1b" : "#6b7280";
+  const bg    = pct > 0 ? "#dcfce7"  : pct < 0 ? "#fee2e2"  : "#f3f4f6";
 
   function saveEdit() { const n = editName.trim(), e = parseInt(editEst), a = parseInt(editAct); if (!n || !e || !a) return; onEdit(task.id, n, e, a); setEditing(false); }
   function cancelEdit() { setEditName(task.name); setEditEst(String(task.estimated)); setEditAct(String(task.actual)); setEditing(false); }
@@ -354,9 +358,13 @@ function AddTaskForm({ onAdd, suggestions }) {
 
 // ── BOARD VIEW ───────────────────────────────
 
-function BoardView({ tasks, timers, onStartTimer, onPauseTimer, onResumeTimer, onEndTimer, onComplete, onDelete, onEdit }) {
+function BoardView({ tasks, timers, onStartTimer, onPauseTimer, onResumeTimer, onEndTimer, onComplete, onDelete, onEdit, onMoveToday }) {
   const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  const cols = [{ key: "none", label: "Unassigned", tasks: tasks.filter(t => !t.date_key) }];
+  const overdueTasks = tasks.filter(t => isOverdue(t));
+  const cols = [
+    { key: "overdue", label: "Overdue", tasks: overdueTasks, isOverdue: true },
+    { key: "none", label: "Unassigned", tasks: tasks.filter(t => !t.date_key) },
+  ];
   for (let i = 0; i < 7; i++) { const key = offsetKey(i); const d = new Date(); d.setDate(d.getDate() + i); cols.push({ key, label: i === 0 ? "Today" : i === 1 ? "Tomorrow" : DAY_NAMES[d.getDay()], tasks: tasks.filter(t => t.date_key === key) }); }
   return (
     <div style={{ overflowX: "auto", paddingBottom: 16 }}>
@@ -364,12 +372,12 @@ function BoardView({ tasks, timers, onStartTimer, onPauseTimer, onResumeTimer, o
         {cols.map(col => (
           <div key={col.key} style={{ width: 220, flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: col.key === todayKey() ? "#1a1814" : "#a09880", textTransform: "uppercase", letterSpacing: "0.07em" }}>{col.label}</span>
-              <span style={{ fontSize: 11, background: "#f4f0e8", color: "#a09880", borderRadius: 10, padding: "1px 7px", fontWeight: 600 }}>{col.tasks.length}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: col.isOverdue ? "#dc2626" : col.key === todayKey() ? "#1a1814" : "#a09880", textTransform: "uppercase", letterSpacing: "0.07em" }}>{col.label}</span>
+              <span style={{ fontSize: 11, background: col.isOverdue && col.tasks.length > 0 ? "#fee2e2" : "#f4f0e8", color: col.isOverdue && col.tasks.length > 0 ? "#dc2626" : "#a09880", borderRadius: 10, padding: "1px 7px", fontWeight: 600 }}>{col.tasks.length}</span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 80, background: "#f8f6f2", borderRadius: 10, padding: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 80, background: col.isOverdue ? "#fff5f5" : "#f8f6f2", borderRadius: 10, padding: 8 }}>
               {col.tasks.length === 0 && <div style={{ textAlign: "center", color: "#ccc", fontSize: 12, padding: "16px 0" }}>Empty</div>}
-              {col.tasks.map(task => { const t = timers[task.id]; return <TaskCard key={task.id} task={task} timerState={t?.state||null} elapsed={t?.elapsed||0} onStartTimer={onStartTimer} onPauseTimer={onPauseTimer} onResumeTimer={onResumeTimer} onEndTimer={onEndTimer} onComplete={onComplete} onDelete={onDelete} onEdit={onEdit} compact />; })}
+              {col.tasks.map(task => { const t = timers[task.id]; return <TaskCard key={task.id} task={task} timerState={t?.state||null} elapsed={t?.elapsed||0} onStartTimer={onStartTimer} onPauseTimer={onPauseTimer} onResumeTimer={onResumeTimer} onEndTimer={onEndTimer} onComplete={onComplete} onDelete={onDelete} onEdit={onEdit} onMoveToday={onMoveToday} compact />; })}
             </div>
           </div>
         ))}
@@ -380,19 +388,81 @@ function BoardView({ tasks, timers, onStartTimer, onPauseTimer, onResumeTimer, o
 
 // ── LIST VIEW ────────────────────────────────
 
-function ListView({ tasks, timers, visibleCompleted, totalEstimated, onStartTimer, onPauseTimer, onResumeTimer, onEndTimer, onComplete, onDelete, onEdit, onDeleteCompleted, onEditCompleted }) {
+function ListView({ tasks, timers, visibleCompleted, totalEstimated, onStartTimer, onPauseTimer, onResumeTimer, onEndTimer, onComplete, onDelete, onEdit, onMoveToday, onDeleteCompleted, onEditCompleted }) {
+  const [overdueOpen, setOverdueOpen] = useState(true);
+  const [futureOpen, setFutureOpen]   = useState(true);
+
+  const overdueTasks    = tasks.filter(t => isOverdue(t));
+  const todayTasks      = tasks.filter(t => t.date_key === todayKey());
+  const unassignedTasks = tasks.filter(t => !t.date_key);
+  const futureTasks     = tasks.filter(t => t.date_key && t.date_key > todayKey()).sort((a,b) => a.date_key.localeCompare(b.date_key));
+
+  function renderCards(list) {
+    return list.map(task => {
+      const t = timers[task.id];
+      return <TaskCard key={task.id} task={task} timerState={t?.state||null} elapsed={t?.elapsed||0} onStartTimer={onStartTimer} onPauseTimer={onPauseTimer} onResumeTimer={onResumeTimer} onEndTimer={onEndTimer} onComplete={onComplete} onDelete={onDelete} onEdit={onEdit} onMoveToday={onMoveToday} />;
+    });
+  }
+
+  const hasAnyTasks = tasks.length > 0 || visibleCompleted.length > 0;
+
   return (
     <>
+      {/* Header row */}
       {tasks.length > 0 && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid #ede9e1" }}>
-          <span style={{ fontSize: 12, color: "#a09880", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>To Do ({tasks.length})</span>
+          <span style={{ fontSize: 12, color: "#a09880", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>To Do ({tasks.length - overdueTasks.length})</span>
           <span style={{ fontSize: 13, fontWeight: 600, color: totalEstimated > 480 ? "#dc2626" : "#555" }}>{formatMin(totalEstimated)} queued{totalEstimated > 480 && " ⚠️"}</span>
         </div>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 32 }}>
-        {tasks.length === 0 && visibleCompleted.length === 0 && <div style={{ textAlign: "center", color: "#c9c3b5", padding: "40px 0", fontSize: 14 }}>Add a task above to get started</div>}
-        {tasks.map(task => { const t = timers[task.id]; return <TaskCard key={task.id} task={task} timerState={t?.state||null} elapsed={t?.elapsed||0} onStartTimer={onStartTimer} onPauseTimer={onPauseTimer} onResumeTimer={onResumeTimer} onEndTimer={onEndTimer} onComplete={onComplete} onDelete={onDelete} onEdit={onEdit} />; })}
-      </div>
+
+      {!hasAnyTasks && <div style={{ textAlign: "center", color: "#c9c3b5", padding: "40px 0", fontSize: 14 }}>Add a task above to get started</div>}
+
+      {/* Today */}
+      {todayTasks.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {renderCards(todayTasks)}
+        </div>
+      )}
+
+      {/* Unassigned — after Today, before Future */}
+      {unassignedTasks.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {(todayTasks.length > 0) && <div style={{ height: 1, background: "#ede9e1", margin: "4px 0 8px" }} />}
+          {renderCards(unassignedTasks)}
+        </div>
+      )}
+
+      {/* Future — collapsible */}
+      {futureTasks.length > 0 && (
+        <div style={{ marginBottom: overdueTasks.length > 0 ? 16 : 32 }}>
+          <div style={{ height: 1, background: "#ede9e1", margin: "4px 0 10px" }} />
+          <button onClick={() => setFutureOpen(o => !o)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px", fontFamily: "inherit" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "#a09880", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>In the Future</span>
+              <span style={{ fontSize: 11, background: "#f4f0e8", color: "#a09880", borderRadius: 10, padding: "1px 7px", fontWeight: 600 }}>{futureTasks.length}</span>
+            </div>
+            <span style={{ fontSize: 11, color: "#a09880", fontWeight: 600 }}>{futureOpen ? "▲ Hide" : "▼ Show"}</span>
+          </button>
+          {futureOpen && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{renderCards(futureTasks)}</div>}
+        </div>
+      )}
+
+      {/* Overdue */}
+      {overdueTasks.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <button onClick={() => setOverdueOpen(o => !o)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px", borderBottom: "1px solid #fecaca", marginBottom: overdueOpen ? 12 : 0, fontFamily: "inherit" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "#dc2626", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>Overdue</span>
+              <span style={{ fontSize: 11, background: "#fee2e2", color: "#dc2626", borderRadius: 10, padding: "1px 7px", fontWeight: 700 }}>{overdueTasks.length}</span>
+            </div>
+            <span style={{ fontSize: 12, color: "#dc2626", fontWeight: 600 }}>{overdueOpen ? "▲ Hide" : "▼ Show"}</span>
+          </button>
+          {overdueOpen && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{renderCards(overdueTasks)}</div>}
+        </div>
+      )}
+
+      {/* Completed */}
       {visibleCompleted.length > 0 && (
         <>
           <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid #ede9e1" }}>
@@ -510,6 +580,7 @@ export default function App() {
   }
 
   async function editTask(id, name, estimated) { await supabase.from("tasks").update({ name, estimated }).eq("id", id); setTasks(prev => prev.map(t => t.id === id ? { ...t, name, estimated } : t)); }
+  async function moveToToday(id) { const dk = todayKey(); await supabase.from("tasks").update({ date_key: dk }).eq("id", id); setTasks(prev => prev.map(t => t.id === id ? { ...t, date_key: dk } : t)); }
   async function deleteTask(id) { setTimers(prev => { const n = { ...prev }; delete n[id]; return n; }); await supabase.from("tasks").delete().eq("id", id); setTasks(prev => prev.filter(t => t.id !== id)); }
   async function deleteCompleted(id) { await supabase.from("completed_tasks").delete().eq("id", id); setVisibleCompleted(prev => prev.filter(t => t.id !== id)); setAllCompleted(prev => prev.filter(t => t.id !== id)); }
   async function editCompleted(id, name, estimated, actual) { await supabase.from("completed_tasks").update({ name, estimated, actual }).eq("id", id); setVisibleCompleted(prev => prev.map(t => t.id === id ? { ...t, name, estimated, actual } : t)); setAllCompleted(prev => prev.map(t => t.id === id ? { ...t, name, estimated, actual } : t)); }
@@ -546,8 +617,8 @@ export default function App() {
       </div>
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "24px 24px 0" }}>
         <AddTaskForm onAdd={addTask} suggestions={suggestionIndex} />
-        {tab === "list" && <ListView tasks={tasks} timers={timers} visibleCompleted={visibleCompleted} totalEstimated={totalEstimated} onStartTimer={startTimer} onPauseTimer={pauseTimer} onResumeTimer={resumeTimer} onEndTimer={endTimer} onComplete={completeTask} onDelete={deleteTask} onEdit={editTask} onDeleteCompleted={deleteCompleted} onEditCompleted={editCompleted} />}
-        {tab === "board" && <BoardView tasks={tasks} timers={timers} onStartTimer={startTimer} onPauseTimer={pauseTimer} onResumeTimer={resumeTimer} onEndTimer={endTimer} onComplete={completeTask} onDelete={deleteTask} onEdit={editTask} />}
+        {tab === "list" && <ListView tasks={tasks} timers={timers} visibleCompleted={visibleCompleted} totalEstimated={totalEstimated} onStartTimer={startTimer} onPauseTimer={pauseTimer} onResumeTimer={resumeTimer} onEndTimer={endTimer} onComplete={completeTask} onDelete={deleteTask} onEdit={editTask} onMoveToday={moveToToday} onDeleteCompleted={deleteCompleted} onEditCompleted={editCompleted} />}
+        {tab === "board" && <BoardView tasks={tasks} timers={timers} onStartTimer={startTimer} onPauseTimer={pauseTimer} onResumeTimer={resumeTimer} onEndTimer={endTimer} onComplete={completeTask} onDelete={deleteTask} onEdit={editTask} onMoveToday={moveToToday} />}
       </div>
       {activeTask && activeTimer && <FloatingBar task={activeTask} elapsed={activeTimer.elapsed} isRunning={activeTimer.state === "running"} onPause={() => pauseTimer(activeTask.id)} onResume={() => resumeTimer(activeTask)} onEnd={() => endTimer(activeTask.id)} />}
       {confirmSwitch && <ConfirmDialog runningTaskName={confirmSwitch.fromName} newTaskName={confirmSwitch.toTask.name} onPause={handleConfirmSwitch} onCancel={() => setConfirmSwitch(null)} />}
