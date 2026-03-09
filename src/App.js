@@ -504,7 +504,15 @@ export default function App() {
       supabase.from("day_history").select("*").eq("user_id", userId),
     ]);
     if (tr.data) setTasks(tr.data);
-    if (cr.data) { setAllCompleted(cr.data); setVisibleCompleted(cr.data); }
+    if (cr.data) {
+      setAllCompleted(cr.data);
+      // Only show completed tasks from today
+      const today = todayKey();
+      setVisibleCompleted(cr.data.filter(t => {
+        const completedDate = t.completed_at ? t.completed_at.slice(0, 10) : null;
+        return completedDate === today;
+      }));
+    }
     if (hr.data) { const h = {}; for (const r of hr.data) h[r.day_key] = r; setDayHistory(h); }
   }, []);
 
@@ -571,7 +579,13 @@ export default function App() {
     const { data: completed } = await supabase.from("completed_tasks").insert({ user_id: session.user.id, name: task.name, estimated: task.estimated, actual, date_key: task.date_key }).select().single();
     await supabase.from("tasks").delete().eq("id", id);
     setTasks(prev => prev.filter(t => t.id !== id));
-    if (completed) { setAllCompleted(prev => [...prev, completed]); setVisibleCompleted(prev => [...prev, completed]); }
+    if (completed) {
+      setAllCompleted(prev => [...prev, completed]);
+      // Only add to visible if completed today
+      if (completed.completed_at && completed.completed_at.slice(0, 10) === todayKey()) {
+        setVisibleCompleted(prev => [...prev, completed]);
+      }
+    }
     const day_key = todayKey();
     const ex = dayHistory[day_key] || { total_est: 0, total_act: 0, count: 0 };
     const updated = { user_id: session.user.id, day_key, total_est: ex.total_est + task.estimated, total_act: ex.total_act + actual, count: ex.count + 1 };
